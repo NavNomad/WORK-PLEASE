@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en" ng-app="app">
+<head>
+  <meta charset="UTF-8">
+  <title>Interactive World Map</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css" />
+  <style>
+    html, body {
+      height: 100%;
+      margin: 0;
+    }
+    .leaflet-container {
+      height: 100vh;
+      width: 100vw;
+    }
+    .map-box {
+      position: absolute;
+      bottom: 10px;
+      left: 10px;
+      background: white;
+      padding: 10px;
+      border-radius: 8px;
+      font-family: sans-serif;
+      box-shadow: 0 0 8px rgba(0,0,0,0.3);
+    }
+  </style>
+</head>
+<body ng-controller="MapCtrl">
+  <leaflet center="center" geojson="geojson" defaults="defaults"></leaflet>
+
+  <div class="map-box" ng-if="selectedCountry">
+    <h3>{{ selectedCountry.name }}</h3>
+    <p><strong>Language:</strong> {{ selectedCountry.language }}</p>
+    <p><strong>Currency:</strong> {{ selectedCountry.currency }} {{ selectedCountry.symbol }}</p>
+  </div>
+
+  <script src="https://ajax.googleapis.com/ajax/libs/angularjs/1.3.2/angular.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.3/leaflet.js"></script>
+  <script src="https://unpkg.com/angular-leaflet-directive@0.10.0/dist/angular-leaflet-directive.min.js"></script>
+
+  <script>
+    angular.module("app", ["leaflet-directive"])
+    .controller("MapCtrl", ["$scope", "$http", function ($scope, $http) {
+      $scope.center = { lat: 20, lng: 0, zoom: 2 };
+      $scope.defaults = {
+        tileLayer: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+        scrollWheelZoom: true
+      };
+      $scope.selectedCountry = null;
+      $scope.highlightedLayer = null;
+      $scope.countryColors = {};
+
+      // Load country color mappings
+      $http.get("https://raw.githubusercontent.com/NavNomad/all-country-colors/main/all-country-colors.json")
+        .then(res => $scope.countryColors = res.data)
+        .catch(() => console.error("Failed to load color mapping."));
+
+      function highlightFeature(layer) {
+        if ($scope.highlightedLayer) {
+          $scope.highlightedLayer.setStyle({
+            weight: 1,
+            color: "#fff",
+            fillColor: $scope.highlightedLayer.defaultFill
+          });
+        }
+        layer.defaultFill = layer.options.fillColor;
+        layer.setStyle({
+          weight: 2,
+          color: "#000",
+          fillColor: "#00bcd4"
+        });
+        $scope.highlightedLayer = layer;
+      }
+
+      // Load country boundaries
+      $http.get("https://s3-us-west-2.amazonaws.com/s.cdpn.io/93930/countries.geo.json?v=11")
+        .then(res => {
+          $scope.geojson = {
+            data: res.data,
+            style: function (feature) {
+              const id = feature.id;
+              const info = $scope.countryColors[id];
+              return {
+                fillColor: info?.color || "#ccc",
+                weight: 1,
+                opacity: 1,
+                color: "#fff",
+                fillOpacity: 0.8
+              };
+            },
+            onEachFeature: function (feature, layer) {
+              layer.on("click", function () {
+                highlightFeature(layer);
+                const code = feature.id;
+                $http.get(`https://restcountries.com/v3.1/alpha/${code}`)
+                  .then(res => {
+                    const c = res.data[0];
+                    $scope.selectedCountry = {
+                      name: c.name.common,
+                      language: Object.values(c.languages || {})[0] || "Unknown",
+                      currency: Object.values(c.currencies || {})[0]?.name || "Unknown",
+                      symbol: Object.values(c.currencies || {})[0]?.symbol || ""
+                    };
+                  })
+                  .catch(() => {
+                    $scope.selectedCountry = {
+                      name: "Unknown",
+                      language: "Unknown",
+                      currency: "Unknown",
+                      symbol: ""
+                    };
+                  });
+              });
+            }
+          };
+        });
+    }]);
+  </script>
+</body>
+</html>
